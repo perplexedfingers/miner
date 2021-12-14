@@ -18,16 +18,16 @@ from receiver import update_task, update_task_devfee, update_task_ws
 from reporter import report_share
 from worker import Worker, get_device_id
 
-VERSION = '0.3.2'
-HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}
-HASHES_COUNT = 0
-SHARES_COUNT = 0
-SHARES_ACCEPTED = 0
-POOL_HAS_RESULTS = False
+VERSION = '0.3.2'  # constant
+HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}  # contant
+HASHES_COUNT = 0  # from worker
+SHARES_COUNT = 0  # from reporter
+POOL_HAS_RESULTS = False  # from reporter
+SHARES_ACCEPTED = 0  # from reporter
 
 
-def print_info():
-    print('TON-Pool.com Miner', VERSION)
+def print_info(version: str) -> None:
+    print('TON-Pool.com Miner', version)
     platforms = cl.get_platforms()
     for i, platform in enumerate(platforms):
         print(f'Platform {i}:')
@@ -35,14 +35,14 @@ def print_info():
             print(f'    Device {j}: {get_device_id(device)}')
 
 
-def print_usage():
-    print('TON-Pool.com Miner', VERSION)
+def print_usage(version: str) -> None:
+    print('TON-Pool.com Miner', version)
     print(f'Usage: {sys.argv[0]} [pool url] [wallet address]')
     print('Run "{sys.argv[0]} info" to check your system info')
     print('Run "{sys.argv[0]} -h" to for detailed arguments')
 
 
-def set_parser(parser):
+def set_parser(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
     parser.add_argument('-p', dest='PLATFORM', help='Platform ID')
     parser.add_argument('-d', dest='DEVICE', help='Device ID')
     parser.add_argument('-t', dest='THREADS', help='Number of threads. This is applied for all devices.')
@@ -54,7 +54,7 @@ def set_parser(parser):
     return parser
 
 
-def set_logger(args):
+def set_logger(args: argparse.Namespace) -> None:
     if args.DEBUG:
         log_level = 'DEBUG'
     elif args.SILENT:
@@ -64,32 +64,23 @@ def set_logger(args):
     logging.basicConfig(format='%(asctime)s [%(levelname)s] %(message)s', level=log_level)
 
 
-def test_pool_connection(pool_url, wallet):
-    logging.info('starting TON-Pool.com Miner %s on pool %s wallet %s ...' % (VERSION, pool_url, wallet))
-    r = requests.get(urljoin(pool_url, '/wallet/' + wallet), headers=HEADERS, timeout=10)
+def test_pool_connection(version: str, pool_url: str, wallet: str, headers: dict) -> None:
+    logging.info('starting TON-Pool.com Miner %s on pool %s wallet %s ...' % (version, pool_url, wallet))
+    r = requests.get(urljoin(pool_url, '/wallet/' + wallet), headers=headers, timeout=10)
     r = r.json()
     r['ok']
     update_task(1)
 
 
-def start_daemon(target, args=None):
-    if args:
-        th = Thread(target=target, args=args)
-    else:
-        th = Thread(target=target)
-    th.setDaemon(True)
-    th.start()
+def start_receiver() -> None:
+    Thread(target=update_task, args=(0,), daemon=True).start()
+    Thread(target=update_task_devfee, daemon=True).start()
+    Thread(target=update_task_ws, daemon=True).start()
 
 
-def start_receiver():
-    start_daemon(update_task, args=(0,))
-    start_daemon(update_task_devfee)
-    start_daemon(update_task_ws)
-
-
-def start_reporter():
+def start_reporter() -> None:
     for _ in range(8):
-        start_daemon(report_share)
+        Thread(target=report_share, daemon=True).start()
 
 
 class PlatformIDError(IndexError):
@@ -124,7 +115,7 @@ def select_devices(specified_platform_id: None or str = None, specified_device_i
     return devices
 
 
-def load_opencl_script():
+def load_opencl_script() -> str:
     path = os.path.dirname(os.path.abspath(__file__))
     prog = open(os.path.join(path, 'sha256.cl'), 'r').read()\
         + '\n'\
@@ -132,14 +123,14 @@ def load_opencl_script():
     return prog
 
 
-def start_worker(devices, thead_count_in_worker):
+def start_worker(devices, thead_count_in_worker) -> None:
     prog = load_opencl_script()
     for i, device in enumerate(devices):
         w = Worker(device, prog, thead_count_in_worker, i)
-        start_daemon(w.run)
+        Thread(target=w.run, daemon=True).start()
 
 
-def report_hash_rate(_ss, cnt):
+def report_hash_rate(_ss: list, cnt: int) -> list:
     ss = _ss.copy()
     ss.append((time.time(), HASHES_COUNT, HASHES_COUNT_PER_DEVICE[:]))
     if len(ss) > 7:
@@ -150,7 +141,7 @@ def report_hash_rate(_ss, cnt):
     log_text = 'average hashrate: %.2fMH/s in %.2fs, %d shares found' % (
         (average_hash_rate / 10**6), average_time_diff, SHARES_COUNT
     )
-    if POOL_HAS_RESULTS:
+    if POOL_HAS_RESULTS:  # once reported has reported
         log_text += ', %d accepted' % SHARES_ACCEPTED
     logging.info(log_text)
 
@@ -164,7 +155,7 @@ def report_hash_rate(_ss, cnt):
     return ss
 
 
-def save_hash_rate_per_device_report(ss, cnt, start_time):
+def save_hash_rate_per_device_report(ss: list, cnt: int, start_time: int) -> None:
     if cnt < 8:  # compute recent
         start = ss[-2]
     elif cnt % 6 == 2:  # compute average
@@ -188,7 +179,7 @@ def save_hash_rate_per_device_report(ss, cnt, start_time):
         }, f)
 
 
-def main():
+def main() -> None:
     ss = [(time.time(), HASHES_COUNT, [0] * len(devices))]
     count = 0
     while True:
@@ -204,7 +195,7 @@ if __name__ == '__main__':
         sys.argv.append('')
     if sys.argv[1] == 'info':
         try:
-            print_info()
+            print_info(VERSION)
         except cl.LogicError:
             print('Failed to get OpenCL platforms, check your graphics card drivers')
             exit(0)
@@ -215,7 +206,7 @@ if __name__ == '__main__':
     elif sys.argv[1].startswith('http') or sys.argv[1].startswith('-'):
         run_args = sys.argv[1:]
     else:
-        print_usage()
+        print_usage(VERSION)
         exit(0)
 
     parser = set_parser(argparse.ArgumentParser())
@@ -227,7 +218,7 @@ if __name__ == '__main__':
         start_time = time.time()
 
     try:
-        test_pool_connection(args.POOL, args.WALLET)
+        test_pool_connection(VERSION, args.POOL, args.WALLET, HEADERS)
     except KeyError:
         logging.error(f'Please check your wallet address: {args.WALLET}')
         exit(1)
@@ -250,7 +241,7 @@ if __name__ == '__main__':
         exit(1)
 
     logging.info(f'Total devices: {len(devices)}')
-    HASHES_COUNT_PER_DEVICE = [0] * len(devices)
+    HASHES_COUNT_PER_DEVICE = [0] * len(devices)  # for and from worker
 
     try:
         start_worker(devices, args.THREADS)

@@ -15,13 +15,15 @@ import requests
 
 import sha256
 
-VERSION = '0.3.2'
+DEVFEE_POOL_URLS = ['https://next.ton-pool.club', 'https://next.ton-pool.com']  # constant
+DEFAULT_WALLET = 'EQBoG6BHwfFPTEUsxXW8y0TyHN9_5Z1_VIb2uctCd-NDmCbx'  # constant
+VERSION = '0.3.2'  # constant
+HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}  # constant
 TASK_LOCK = RLock()
-DEVFEE_POOL_URLS = ['https://next.ton-pool.club', 'https://next.ton-pool.com']
-DEFAULT_WALLET = 'EQBoG6BHwfFPTEUsxXW8y0TyHN9_5Z1_VIb2uctCd-NDmCbx'
-HASHES_COUNT_DEVFEE = 0
-HASHES_COUNT = 0
-HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}
+CUR_TASK = None  # for Worker
+HASHES_COUNT_DEVFEE = 0  # from Worker
+HASHES_COUNT = 0  # from worker
+WS_AVAILABLE = False  # only here
 
 
 def load_task(r, src, submit_conf):

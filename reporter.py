@@ -6,27 +6,31 @@ from urllib.parse import urljoin
 
 import requests
 
-VERSION = '0.3.2'
+VERSION = '0.3.2'  # constant
+HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}  # constant
+DEFAULT_WALLET = 'EQBoG6BHwfFPTEUsxXW8y0TyHN9_5Z1_VIb2uctCd-NDmCbx'  # constant
 SHARES_LOCK = RLock()
-SHARE_REPORT_QUEUE = Queue()
-HEADERS = {'user-agent': 'ton-pool-miner/' + VERSION}
-DEFAULT_WALLET = 'EQBoG6BHwfFPTEUsxXW8y0TyHN9_5Z1_VIb2uctCd-NDmCbx'
+SHARES_COUNT = 0  # for miner
+SHARES_ACCEPTED = 0  # for miner
+POOL_HAS_RESULTS = False  # for miner
+SHARE_REPORT_QUEUE = Queue()  # from Worker
 
 
 def report_share():
     global SHARES_COUNT, SHARES_ACCEPTED, POOL_HAS_RESULTS
     n_tries = 5
     while True:
-        input, giver, hash, tm, (pool_url, wallet) = SHARE_REPORT_QUEUE.get(True)
+        input_, giver, hash, tm, (pool_url, wallet) = SHARE_REPORT_QUEUE.get(True)
         is_devfee = wallet == DEFAULT_WALLET
         logging.debug('trying to submit share %s%s [input = %s, giver = %s, job_time = %.2f]' %
-                      (hash.hex(), ' (devfee)' if is_devfee else '', input, giver, tm))
+                      (hash.hex(), ' (devfee)' if is_devfee else '', input_, giver, tm))
         for i in range(n_tries + 1):
             try:
                 r = requests.post(
                     urljoin(pool_url, '/submit'),
-                    json={'inputs': [input], 'giver': giver, 'miner_addr': wallet},
-                    headers=HEADERS, timeout=4 * (i + 1)
+                    json={'inputs': [input_], 'giver': giver, 'miner_addr': wallet},
+                    headers=HEADERS,
+                    timeout=4 * (i + 1),
                 )
                 d = r.json()
             except Exception as e:

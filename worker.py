@@ -8,17 +8,19 @@ from threading import RLock
 import numpy as np
 import pyopencl as cl
 
+TASK_LOCK = RLock()
+CUR_TASK = None  # from receiver
+HASHES_LOCK = RLock()
+HASHES_COUNT_PER_DEVICE = []  # for miner
+SHARE_REPORT_QUEUE = Queue()  # for reporter
+HASHES_COUNT = 0  # for miner and receiver
+HASHES_COUNT_DEVFEE = 0  # for receiver
+BENCHMARK_LOCK = RLock()  # might not need this?
+
 try:
     BENCHMARK_DATA = json.load(open('benchmark_data.txt'))
 except Exception:
     BENCHMARK_DATA = {}
-
-CUR_TASK = None
-HASHES_LOCK = RLock()
-HASHES_COUNT_PER_DEVICE = []
-SHARE_REPORT_QUEUE = Queue()
-TASK_LOCK = RLock()
-BENCHMARK_LOCK = RLock()
 
 
 def get_device_id(device):
@@ -78,11 +80,12 @@ class Worker:
     def run_task(self, kernel, iterations):
         mf = cl.mem_flags
         input, giver, complexity, suffix_arr, global_it, tm, submit_conf, count_devfee, args = get_task(iterations)
+        # input, complexity, suffix_arr, global_it, and args are needed for mining. others are metadata
         args_g = cl.Buffer(self.context, mf.READ_ONLY | mf.COPY_HOST_PTR, hostbuf=args)
         res_g = cl.Buffer(self.context, mf.WRITE_ONLY | mf.COPY_HOST_PTR, hostbuf=np.full(2048, 0xffffffff, np.uint32))
         kernel(self.queue, (self.threads,), None, args_g, res_g)
         res = np.empty(2048, np.uint32)
-        e = cl.enqueue_copy(self.queue, res, res_g, is_blocking=False)
+        e = cl.enqueue_copy(self.queue, res, res_g, is_blocking=False)  # just set blocking?
 
         while e.get_info(cl.event_info.COMMAND_EXECUTION_STATUS) != cl.command_execution_status.COMPLETE:
             time.sleep(0.1)
