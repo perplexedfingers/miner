@@ -8,16 +8,18 @@ import json
 import logging
 import os
 import random
-import requests
-import sha256
 import ssl
 import sys
 import time
+from queue import Queue
+from threading import RLock, Thread
+from urllib.parse import urljoin
+
 import numpy as np
 import pyopencl as cl
-from queue import Queue
-from threading import Thread, RLock
-from urllib.parse import urljoin
+import requests
+
+import sha256
 
 DEFAULT_POOL_URL = 'https://next.ton-pool.club'
 DEFAULT_WALLET = 'EQBoG6BHwfFPTEUsxXW8y0TyHN9_5Z1_VIb2uctCd-NDmCbx'
@@ -58,10 +60,15 @@ def report_share():
     while True:
         input, giver, hash, tm, (pool_url, wallet) = share_report_queue.get(True)
         is_devfee = wallet == DEFAULT_WALLET
-        logging.debug('trying to submit share %s%s [input = %s, giver = %s, job_time = %.2f]' % (hash.hex(), ' (devfee)' if is_devfee else '', input, giver, tm))
+        logging.debug('trying to submit share %s%s [input = %s, giver = %s, job_time = %.2f]' %
+                      (hash.hex(), ' (devfee)' if is_devfee else '', input, giver, tm))
         for i in range(n_tries + 1):
             try:
-                r = requests.post(urljoin(pool_url, '/submit'), json={'inputs': [input], 'giver': giver, 'miner_addr': wallet}, headers=headers, timeout=4 * (i + 1))
+                r = requests.post(
+                    urljoin(pool_url, '/submit'),
+                    json={'inputs': [input], 'giver': giver, 'miner_addr': wallet},
+                    headers=headers, timeout=4 * (i + 1)
+                )
                 d = r.json()
             except Exception as e:
                 if i == n_tries:
@@ -157,13 +164,13 @@ def update_task_ws():
     global ws_available
     try:
         from websocket import create_connection
-    except:
+    except Exception:
         logging.warning('websocket-client is not installed, will only use polling to fetch new jobs')
         return
     while True:
         try:
             r = requests.get(urljoin(pool_url, '/job-ws'), headers=headers, timeout=10)
-        except:
+        except Exception:
             time.sleep(5)
             continue
         if r.status_code == 400:
@@ -189,12 +196,13 @@ def get_task(iterations):
         global_it, input, giver, complexity, hash_state, suffix_arr, tm, submit_conf, count_devfee = cur_task
         cur_task[0] += 256
     suffix_np = np.array(suffix_arr[:12] + [suffix_arr[14]]).astype(np.uint32)
-    return input, giver, complexity, suffix_arr, global_it, tm, submit_conf, count_devfee, np.concatenate((np.array([iterations, global_it]).astype(np.uint32), hash_state, suffix_np))
+    return (input, giver, complexity, suffix_arr, global_it, tm, submit_conf, count_devfee,
+            np.concatenate((np.array([iterations, global_it]).astype(np.uint32), hash_state, suffix_np)))
 
 
 try:
     benchmark_data = json.load(open('benchmark_data.txt'))
-except:
+except Exception:
     benchmark_data = {}
 benchmark_lock = RLock()
 
@@ -467,7 +475,7 @@ if __name__ == '__main__':
     path = os.path.dirname(os.path.abspath(__file__))
     try:
         prog = open(os.path.join(path, 'sha256.cl'), 'r').read() + '\n' + open(os.path.join(path, 'hash_solver.cl'), 'r').read()
-    except:
+    except Exception:
         logging.info('failed to load opencl program')
         os._exit(1)
     for i, device in enumerate(devices):
